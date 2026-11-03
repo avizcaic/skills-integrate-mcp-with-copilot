@@ -8,8 +8,17 @@
   </head>
   <body>
     <header>
-      <h1>Mergington High School</h1>
-      <h2>Extracurricular Activities</h2>
+      <div class="header-content">
+        <div>
+          <h1>Mergington High School</h1>
+          <h2>Extracurricular Activities</h2>
+        </div>
+        <div class="staff-controls">
+          <span id="staff-status" role="status">Checking staff access...</span>
+          <button id="staff-login-button" type="button" class="hidden">Staff Login</button>
+          <button id="staff-logout-button" type="button" class="hidden">Log Out</button>
+        </div>
+      </div>
     </header>
 
     <main>
@@ -21,7 +30,7 @@
         </div>
       </section>
 
-      <section id="signup-container">
+      <section id="signup-container" class="hidden">
         <h3>Sign Up for an Activity</h3>
         <form id="signup-form">
           <div class="form-group">
@@ -40,6 +49,25 @@
         <div id="message" class="hidden"></div>
       </section>
     </main>
+
+    <dialog id="staff-login-dialog" aria-labelledby="staff-login-title">
+      <form id="staff-login-form">
+        <h2 id="staff-login-title">Staff Login</h2>
+        <div class="form-group">
+          <label for="staff-username">Username:</label>
+          <input id="staff-username" name="username" autocomplete="username" required />
+        </div>
+        <div class="form-group">
+          <label for="staff-password">Password:</label>
+          <input id="staff-password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <div id="staff-login-message" class="hidden" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" id="staff-login-cancel">Cancel</button>
+          <button type="submit">Log In</button>
+        </div>
+      </form>
+    </dialog>
 
     <footer>
       <p>&copy; 2026 Mergington High School</p>
