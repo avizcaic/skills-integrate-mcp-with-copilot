@@ -5,14 +5,69 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+import hashlib
+import hmac
+import json
+import os
+import secrets
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
-import os
-from pathlib import Path
+from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET") or secrets.token_urlsafe(32),
+    same_site="lax",
+    https_only=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+)
+
+STAFF_FILE = Path(__file__).with_name("staff.json")
+PASSWORD_HASH_ITERATIONS = 310_000
+
+
+def load_staff_accounts():
+    if not STAFF_FILE.exists():
+        return {}
+
+    with STAFF_FILE.open(encoding="utf-8") as staff_file:
+        staff_data = json.load(staff_file)
+
+    return {account["username"]: account for account in staff_data["staff"]}
+
+
+staff_accounts = load_staff_accounts()
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def verify_staff_password(account, password):
+    try:
+        salt = bytes.fromhex(account["salt"])
+        expected_hash = account["password_hash"]
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    actual_hash = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, PASSWORD_HASH_ITERATIONS
+    ).hex()
+    return hmac.compare_digest(actual_hash, expected_hash)
+
+
+def require_staff(request: Request):
+    username = request.session.get("staff_username")
+    if username not in staff_accounts:
+        raise HTTPException(status_code=401, detail="Staff login required")
+    return username
 
 # Mount the static files directory
 current_dir = Path(__file__).parent
@@ -88,8 +143,37 @@ def get_activities():
     return activities
 
 
+@app.post("/login")
+def login(credentials: LoginRequest, request: Request):
+    account = staff_accounts.get(credentials.username)
+    if account is None or not verify_staff_password(account, credentials.password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    request.session.clear()
+    request.session["staff_username"] = credentials.username
+    return {"username": credentials.username}
+
+
+@app.get("/session")
+def get_session(request: Request):
+    username = request.session.get("staff_username")
+    return {
+        "authenticated": username in staff_accounts,
+        "configured": bool(staff_accounts),
+        "username": username,
+    }
+
+
+@app.post("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return {"message": "Logged out"}
+
+
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
+def signup_for_activity(
+    activity_name: str, email: str, _: str = Depends(require_staff)
+):
     """Sign up a student for an activity"""
     # Validate activity exists
     if activity_name not in activities:
@@ -111,7 +195,9 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
+def unregister_from_activity(
+    activity_name: str, email: str, _: str = Depends(require_staff)
+):
     """Unregister a student from an activity"""
     # Validate activity exists
     if activity_name not in activities:
